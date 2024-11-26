@@ -1,0 +1,184 @@
+﻿@page "/flight-search"
+@using BizLogicLayer.Services
+@using SharedModel.Models
+@inject BookingService BookingService
+@inject IFlightAggregatorService FlightAggregatorService
+
+<h3 class="text-primary">Search Flights</h3>
+
+<div class="card p-3 my-4">
+    <h5 class="card-title">Flight Search Criteria</h5>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label for="departure" class="form-label">Departure:</label>
+            <input id="departure" class="form-control" @bind="searchCriteria.Departure" placeholder="Enter departure location" />
+        </div>
+        <div class="col-md-6">
+            <label for="destination" class="form-label">Destination:</label>
+            <input id="destination" class="form-control" @bind="searchCriteria.Destination" placeholder="Enter destination" />
+        </div>
+        <div class="col-md-6">
+            <label for="departureDate" class="form-label">Departure Date:</label>
+            <input type="date" id="departureDate" class="form-control" @bind="searchCriteria.DepartureDate" />
+        </div>
+        <div class="col-md-6">
+            <label for="maxPrice" class="form-label">Max Price:</label>
+            <input type="number" id="maxPrice" class="form-control" @bind="searchCriteria.MaxPrice" placeholder="Enter max price" />
+        </div>
+        <div class="col-md-6">
+            <label for="maxLayovers" class="form-label">Max Layovers:</label>
+            <input type="number" id="maxLayovers" class="form-control" @bind="searchCriteria.MaxLayovers" placeholder="Enter max layovers" />
+        </div>
+        <div class="col-md-6">
+            <label for="airline" class="form-label">Airline:</label>
+            <input id="airline" class="form-control" @bind="searchCriteria.Airline" placeholder="Enter preferred airline" />
+        </div>
+    </div>
+    <div class="mt-3 text-end">
+        <button class="btn btn-primary" @onclick="SearchFlights" enable="@(!isLoading && IsSearchCriteriaValid())">
+            @(isLoading ? "Searching..." : "Search")
+        </button>
+    </div>
+</div>
+
+@if (flights != null && flights.Any())
+{
+    <h3 class="text-success">Search Results</h3>
+    <ul class="list-group">
+        @foreach (var flight in flights)
+        {
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <span>
+                    <strong>@flight.FlightNumber</strong> - @flight.Departure to @flight.Destination - $@flight.Price
+                </span>
+                <button class="btn btn-sm btn-outline-success" @onclick="() => ShowBookingModal(flight)">
+                    Book
+                </button>
+            </li>
+        }
+    </ul>
+}
+else if (flights != null)
+{
+    <p class="text-muted">No flights found matching your criteria.</p>
+}
+
+@if (showBookingModal)
+{
+    <div class="modal-backdrop" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                                  background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center;
+                                  align-items: center; z-index: 1050;">
+        <div class="modal" style="background: #fff; padding: 20px; margin: 20px; border-radius: 8px; display : block;
+                              box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);">
+            <h3>Confirm Booking</h3>
+            <p>Flight: @selectedFlight?.FlightNumber</p>
+
+            <div class="form-group">
+                <label for="passengerName">Name:</label>
+                <input id="passengerName" class="form-control" @bind="passengerName" />
+            </div>
+            <div class="form-group">
+                <label for="passengerEmail">Email:</label>
+                <input id="passengerEmail" type="email" class="form-control" @bind="passengerEmail" />
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseBookingModal">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="ConfirmBooking"
+                        disabled="@(string.IsNullOrWhiteSpace(passengerName) || string.IsNullOrWhiteSpace(passengerEmail))">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
+}
+
+
+@code {
+    private FlightSearchCriteria searchCriteria = new FlightSearchCriteria();
+    private List<Flight> flights;
+    private Flight selectedFlight;
+    private bool isLoading = false;
+    private bool showBookingModal = false;
+    private string passengerName;
+    private string passengerEmail;
+
+    private async Task SearchFlights()
+    {
+        isLoading = true;
+        try
+        {
+            var result = await  FlightAggregatorService.GetAggregatedFlightsAsync(searchCriteria);
+
+            flights = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error searching flights: {ex.Message}");
+            flights = new List<Flight>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private bool IsSearchCriteriaValid()
+    {
+        return !string.IsNullOrWhiteSpace(searchCriteria.Departure)
+            && !string.IsNullOrWhiteSpace(searchCriteria.Destination)
+            && searchCriteria.DepartureDate != default;
+    }
+
+    private void ShowBookingModal(Flight flight)
+    {
+        selectedFlight = flight;
+        showBookingModal = true;
+    }
+
+    private void CloseBookingModal()
+    {
+        showBookingModal = false;
+        selectedFlight = null;
+        passengerName = string.Empty;
+        passengerEmail = string.Empty;
+    }
+
+    private async Task ConfirmBooking()
+    {
+        if (selectedFlight == null || string.IsNullOrWhiteSpace(passengerName) || string.IsNullOrWhiteSpace(passengerEmail))
+            return;
+
+        try
+        {
+            var bookingRequest = new BookingRequest
+                {
+                    FlightNumber = selectedFlight.FlightNumber,
+                    PassengerName = passengerName,
+                    PassengerEmail = passengerEmail
+                };
+
+                await BookingService.InitializeAsync();
+            var success = BookingService.BookFlight(bookingRequest);
+
+            if (success)
+            {
+                flights.Remove(selectedFlight);
+                Console.WriteLine("Flight booked successfully!");
+            }
+            else
+            {
+                Console.WriteLine("Failed to book the flight.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error booking flight: {ex.Message}");
+        }
+        finally
+        {
+            CloseBookingModal();
+        }
+    }
+}

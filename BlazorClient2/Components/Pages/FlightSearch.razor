@@ -1,0 +1,348 @@
+﻿@page "/flight-search"
+@rendermode InteractiveServer
+@using BizLogicLayer.Services
+@using SharedModel.Models
+@using System.Linq.Dynamic.Core;
+@using BizLogicLayer.Extensions;
+@inject IBookingService BookingService
+@inject IFlightAggregatorService FlightAggregatorService
+
+<h3 class="text-primary">Search Flights</h3>
+
+<div class="card p-3 my-4">
+    <h5 class="card-title">Flight Search Criteria</h5>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label for="departure" class="form-label">Departure:</label>
+            <input id="departure" class="form-control" @bind="searchCriteria.Departure" placeholder="Enter departure location" />
+        </div>
+        <div class="col-md-6">
+            <label for="destination" class="form-label">Destination:</label>
+            <input id="destination" class="form-control" @bind="searchCriteria.Destination" placeholder="Enter destination" />
+        </div>
+        <div class="col-md-6">
+            <label for="departureDate" class="form-label">Departure Date:</label>
+            <input type="date" id="departureDate" class="form-control" @bind="searchCriteria.DepartureDate" />
+        </div>
+        <div class="col-md-6">
+            <label for="maxPrice" class="form-label">Max Price:</label>
+            <input type="number" id="maxPrice" class="form-control" @bind="searchCriteria.MaxPrice" placeholder="Enter max price" />
+        </div>
+        <div class="col-md-6">
+            <label for="maxLayovers" class="form-label">Max Layovers:</label>
+            <input type="number" id="maxLayovers" class="form-control" @bind="searchCriteria.MaxLayovers" placeholder="Enter max layovers" />
+        </div>
+        <div class="col-md-6">
+            <label for="airline" class="form-label">Airline:</label>
+            <input id="airline" class="form-control" @bind="searchCriteria.Airline" placeholder="Enter preferred airline" />
+        </div>
+        <div class="mt-3 text-end">
+            <button class="btn btn-primary" @onclick=SearchFlights disabled="@(isLoading)">
+                @(isLoading ? "Searching..." : "Search")
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (flights != null && flights.Any())
+{
+    <h3 class="text-success text-center">Flights</h3>
+    <table class="table table-striped table-bordered">
+        <thead class="thead-light">
+            <tr>
+                <th>
+                    <button class="btn btn-link p-0" @onclick="() => SortByColumn(nameof(Flight.FlightNumber))">
+                        Flight Number @SortIndicator(nameof(Flight.FlightNumber))
+                    </button>
+                </th>
+                <th>
+                    <button class="btn btn-link p-0" @onclick="() => SortByColumn(nameof(Flight.Departure))">
+                        Departure @SortIndicator(nameof(Flight.Departure))
+                    </button>
+                </th>
+                <th>
+                    <button class="btn btn-link p-0" @onclick="() => SortByColumn(nameof(Flight.Destination))">
+                        Destination @SortIndicator(nameof(Flight.Destination))
+                    </button>
+                </th>
+                <th>
+                    <button class="btn btn-link p-0" @onclick="() => SortByColumn(nameof(Flight.Price))">
+                        Price @SortIndicator(nameof(Flight.Price))
+                    </button>
+                </th>
+                <th>
+                    <button class="btn btn-link p-0" @onclick="() => SortByColumn(nameof(Flight.TotalPlacesCount))">
+                        Total Seats @SortIndicator(nameof(Flight.TotalPlacesCount))
+                    </button>
+                </th>
+                <th>
+                    <button class="btn btn-link p-0" @onclick="() => SortByColumn(nameof(Flight.AvialablePlacesCount))">
+                        Available Seats @SortIndicator(nameof(Flight.AvialablePlacesCount))
+                    </button>
+                </th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var flight in PaginatedFlights)
+            {
+                <tr>
+                    <td><strong>@flight.FlightNumber</strong></td>
+                    <td>@flight.Departure</td>
+                    <td>@flight.Destination</td>
+                    <td>$@flight.Price.ToString("F2")</td>
+                    <td>@flight.TotalPlacesCount</td>
+                    <td>@flight.AvialablePlacesCount</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-success"
+                                @onclick="() => ShowBookingModal(flight)"
+                                disabled="@(flight.AvialablePlacesCount == 0)">
+                            Book
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+
+    <!-- Pagination controls -->
+    <div class="d-flex justify-content-center align-items-center my-3">
+        <!-- First page button -->
+        <button class="btn btn-outline-primary btn-sm me-2" @onclick="() => GoToPage(1)" disabled="@IsFirstPage">
+            First
+        </button>
+
+        <!-- Previous button -->
+        <button class="btn btn-outline-primary btn-sm me-2" @onclick="GoToPreviousPage" disabled="@IsFirstPage">
+            <i class="bi bi-chevron-left"></i> Previous
+        </button>
+
+        <!-- Page range buttons (3 pages before and after) -->
+        @for (var pageNumber = Math.Max(1, CurrentPage - 3); pageNumber <= Math.Min(TotalPages, CurrentPage + 3); pageNumber++)
+        {
+            <button class="btn btn-outline-primary btn-sm mx-1"
+                    @onclick="() => GoToPage(pageNumber)"
+                    disabled="@(pageNumber == CurrentPage)">
+                @pageNumber
+            </button>
+        }
+
+        <!-- Next button -->
+        <button class="btn btn-outline-primary btn-sm ms-2" @onclick="GoToNextPage" disabled="@IsLastPage">
+            Next <i class="bi bi-chevron-right"></i>
+        </button>
+
+        <!-- Last page button -->
+        <button class="btn btn-outline-primary btn-sm ms-2" @onclick="() => GoToPage(TotalPages)" disabled="@IsLastPage">
+            Last
+        </button>
+    </div>
+
+    <!-- Total rows displayed -->
+    <div class="text-center mt-3">
+        <p>Showing @PaginatedFlights.Count of @flights.Count flights</p>
+    </div>
+
+}
+else if (flights != null)
+{
+    <p class="text-muted">No flights found matching your criteria.</p>
+}
+
+@if (showBookingModal)
+{
+    <div class="modal-backdrop" style="
+    position: fixed;  height: 100%;
+    background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center;
+    align-items: center; z-index: 1050;">
+        <div class="modal" style="
+        background: #fff; padding: 20px; width: 300px ; top : unset;   height: 40%; left: unset; border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); text-align: center;display: flow; align-self : center; vertical-align: central;">
+            <h3>Confirm Booking</h3>
+            <p>Flight: @selectedFlight?.FlightNumber</p>
+
+            <div class="form-group">
+                <label for="passengerName">Name:</label>
+                <input id="passengerName" class="form-control" @bind="passengerName" />
+            </div>
+            <div class="form-group">
+                <label for="passengerEmail">Email:</label>
+                <input id="passengerEmail" type="email" class="form-control" @bind="passengerEmail" />
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="HandleClose">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="ConfirmBooking"
+                        disabled="@(string.IsNullOrWhiteSpace(passengerName) || string.IsNullOrWhiteSpace(passengerEmail))">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(modalResult))
+{
+    <div style="position: fixed; top: 20px; right: 20px; background: #f8d7da; color: #721c24; padding: 10px 20px;
+                border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); z-index: 1051;">
+        @modalResult
+    </div>
+}
+
+
+
+@code {
+    private FlightSearchCriteria searchCriteria = new FlightSearchCriteria();
+    private List<Flight> flights;
+    private Flight selectedFlight;
+    private bool isLoading = false;
+    private bool showBookingModal = false;
+    private string passengerName;
+    private string passengerEmail;
+    private List<Flight> PaginatedFlights => flights.Skip((CurrentPage - 1) * ItemsPerPage).Take(ItemsPerPage).ToList();
+    private string modalResult = string.Empty;
+    private int CurrentPage { get; set; } = 1;
+    private int ItemsPerPage { get; set; } = 20;
+    private int TotalPages => (int)Math.Ceiling(flights.Count / (double)ItemsPerPage);
+    private bool IsFirstPage => CurrentPage == 1;
+    private bool IsLastPage => CurrentPage == TotalPages;
+    private string SortColumn { get; set; } = nameof(Flight.FlightNumber);
+    private bool SortDescending { get; set; } = false;
+
+    private void SortByColumn(string column)
+    {
+        if (SortColumn == column)
+        {
+            SortDescending = !SortDescending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortDescending = false;
+        }
+
+        SearchFlights();
+    }
+
+    private string SortIndicator(string column)
+    {
+        if (SortColumn == column)
+        {
+            return SortDescending ? "▼" : "▲";
+        }
+
+        return string.Empty;
+    }
+
+    private void SearchFlights()
+    {
+        isLoading = true;
+
+        try
+        {
+            var result = FlightAggregatorService.GetAggregatedFlights(searchCriteria).OrderByColumn(SortColumn, SortDescending);
+
+            flights = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error searching flights: {ex.Message}");
+            flights = new List<Flight>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void GoToPage(int pageNumber)
+    {
+        if (pageNumber >= 1 && pageNumber <= TotalPages)
+        {
+            CurrentPage = pageNumber;
+        }
+    }
+
+    private void GoToPreviousPage()
+    {
+        if (CurrentPage > 1)
+        {
+            CurrentPage--;
+        }
+    }
+
+    private void GoToNextPage()
+    {
+        if (CurrentPage < TotalPages)
+        {
+            CurrentPage++;
+        }
+    }
+
+
+    private void ShowBookingModal(Flight flight)
+    {
+        selectedFlight = flight;
+        showBookingModal = true;
+    }
+
+    private void HandleClose()
+    {
+        modalResult = CloseBookingModal(); // Call the method that returns a string result
+        showBookingModal = false;
+    }
+
+    private string CloseBookingModal()
+    {
+        showBookingModal = false;
+        passengerEmail = null;
+        passengerName = null;
+        selectedFlight = null;
+        return "Booking canceled.";
+    }
+
+
+    private void ConfirmBooking()
+    {
+        if (selectedFlight == null || string.IsNullOrWhiteSpace(passengerName) || string.IsNullOrWhiteSpace(passengerEmail))
+            return;
+
+        try
+        {
+            var bookingRequest = new BookingRequestDto
+                {
+                    PassengerName = passengerName,
+                    PassengerEmail = passengerEmail,
+                    FlightNumber = selectedFlight.FlightNumber
+                };
+
+            var result = BookingService.BookFlight(bookingRequest);
+
+            if (result == "Ok")
+            {
+                modalResult = "Flight booked successfully!";
+            }
+            else if (result == "NotFound")
+            {
+                modalResult = "Flight not found";
+            }
+            else if (result == "Out")
+            {
+                modalResult = "There is no free seat on that flight. sorry for that";
+            }
+            else
+            {
+                modalResult = "Something went wrong";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error booking flight: {ex.Message}");
+        }
+        finally
+        {
+            CloseBookingModal();
+        }
+    }
+}
